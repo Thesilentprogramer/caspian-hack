@@ -1,0 +1,37 @@
+[
+  {
+    "name": "email",
+    "text": "ping ada@example.com please",
+    "expect": [{"category": "EMAIL", "value": "ada@example.com"}]
+  },
+  {
+    "name": "ipv4",
+    "text": "box is at 192.168.1.105",
+    "expect": [{"category": "IP_ADDRESS", "value": "192.168.1.105"}]
+  },
+  {
+    "name": "stripe_live_key",
+    "text": "key sk_live_abc123 expired",
+    "expect": [{"category": "API_KEY", "value": "sk_live_abc123"}]
+  },
+  {
+    "name": "github_pat",
+    "text": "token ghp_abcdefghijklmnopqrstuvwxyz012345",
+    "expect": [{"category": "API_KEY", "value": "ghp_abcdefghijklmnopqrstuvwxyz012345"}]
+  },
+  {
+    "name": "pk_test",
+    "text": "publishable pk_test_1234567890",
+    "expect": [{"category": "API_KEY", "value": "pk_test_1234567890"}]
+  },
+  {
+    "name": "visa",
+    "text": "charge 4111111111111111 today",
+    "expect": [{"category": "CREDIT_CARD", "value": "4111111111111111"}]
+  },
+  {
+    "name": "phone",
+    "text": "call +1-555-123-4567 now",
+    "expect": [{"category": "PHONE", "value": "+1-555-123-4567"}]
+  }
+]
