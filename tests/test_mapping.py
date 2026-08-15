@@ -3,7 +3,6 @@ from __future__ import annotations
 import time
 
 import pytest
-import time_machine
 
 from privacy_guard._mapping import MappingStore
 from privacy_guard.types import MappingExpired
@@ -39,12 +38,7 @@ def test_unknown_mapping_id_expires() -> None:
         store.get_all("missing")
 
 
-def test_ttl_expiry_with_frozen_clock() -> None:
-    store = MappingStore(ttl_seconds=10)
-    with time_machine.travel(0, tick=False):
-        # monotonic isn't patched by default the same way; use injected clock
-        pass
-
+def test_ttl_expiry_with_injected_clock() -> None:
     clock = {"now": 100.0}
 
     def now() -> float:

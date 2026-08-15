@@ -1,5 +1,5 @@
 from privacy_guard.guard import Guard, get_guard, restore, sanitize
-from privacy_guard.types import MappingExpired, MappingError, SanitizeResult
+from privacy_guard.types import MappingError, MappingExpired, SanitizeResult
 
 __all__ = [
     "Guard",

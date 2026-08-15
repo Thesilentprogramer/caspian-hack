@@ -51,7 +51,7 @@ that term for this, and neither should you if you read this.
    placeholder like `[EMAIL_A1B2]`, and returns the safe text plus a
    `mapping_id`. The encrypted values live only in an in-memory, TTL-bound
    store — never written to disk, never sent anywhere.
-2. The safe text goes to the LLM. The LLM never sees a raw value, but
+2. The safe text goes to Featherless. Featherless never sees a raw value, but
    because placeholders are *typed*, it still reasons coherently about them.
 3. `restore(text, mapping_id)` — decrypts and substitutes the real values
    back into the LLM's response, right before `message.reply()` sends it.
@@ -66,7 +66,7 @@ Incoming (Slack / Email)
   sanitize() ──► regex: email / IP / credit card / API key / phone
        │         spaCy NER: person / org names
        ▼
-  [safe text only] ──► LLM
+  [safe text only] ──► Featherless (OpenAI-compatible)
        │
        ▼
   restore() ──► real values re-injected
@@ -74,6 +74,9 @@ Incoming (Slack / Email)
        ▼
   message.reply()  →  back out on Slack / Email
 ```
+
+The Completer is **not** streamed. Restore needs the full reply; streaming
+would leak placeholders onto the channel.
 
 ---
 
@@ -93,42 +96,55 @@ Incoming (Slack / Email)
 ## Project structure
 
 ```
-caspian-privacy-guard/
-├── detector.py        # regex + NER scanning
-├── vault.py            # in-memory encrypted mapping store (TTL)
-├── guard.py            # sanitize() / restore(), the public API
-├── mcp_server.py        # exposes sanitize/restore as MCP tools (stdio)
-├── agent_handler.py     # caspian-sdk on_message handler, Slack + Email
-├── requirements.txt
-├── PRD.md
+caspian-hack/
+├── CONTEXT.md
+├── pyproject.toml
+├── src/
+│   ├── privacy_guard/          # deep module: sanitize / restore
+│   │   ├── guard.py
+│   │   ├── _scanner.py         # regex + NER (private)
+│   │   └── _mapping.py         # in-memory Fernet Mapping (private)
+│   ├── privacy_guard_mcp/      # Tool Adapter (stdio)
+│   └── privacy_guard_agent/    # Channel Adapter + Featherless Completer
+├── tests/
+├── PRD (1).md
 └── README.md
 ```
+
+Public interface of Privacy Guard is only `sanitize` / `restore`. The Caspian
+handler and the MCP server are adapters on that interface.
 
 ---
 
 ## Setup
 
 ```bash
-# 1. Python deps
-pip install caspian-sdk cryptography spacy mcp openai --break-system-packages
-python -m spacy download en_core_web_sm
+# 1. Python env
+uv sync --extra dev
+uv run python -m spacy download en_core_web_sm   # optional; NER tests skip without it
 
-# 2. Caspian project + API key
+# 2. Env
+cp .env.example .env
+# CASPIAN_API_KEY — mint one:
 curl -s -X POST https://api.trycaspianai.com/v1/projects/sandbox \
   -H 'Content-Type: application/json' -d '{"name":"privacy-guard"}'
-# write the returned api_key to .env as CASPIAN_API_KEY
+# FEATHERLESS_API_KEY — from featherless.ai (hackathon inference partner)
+# FEATHERLESS_MODEL=Qwen/Qwen2.5-7B-Instruct   # Llama 3.x is HuggingFace-gated
+# After changing .env, restart the agent — it only reads the model at startup.
 
-# 3. Featherless.ai API key (hackathon inference partner — free $25 plan)
-# get a key from featherless.ai, write it to .env as:
-#   FEATHERLESS_API_KEY=...
-#   FEATHERLESS_MODEL=meta-llama/Meta-Llama-3.1-8B-Instruct   # or any model from /v1/models
+# 3. Tests (no live channels, no spaCy model)
+uv run pytest -m "not live and not ner"
 
-# 4. Run the agent (connects Slack + Email, wraps Featherless calls in the guard)
-python agent_handler.py
+# 4. Agent — Slack + Email, Featherless wrapped in the Guard
+uv run privacy-guard-agent
 
-# 5. Run the MCP server standalone (for use from Claude Desktop / Cursor / etc.)
-python mcp_server.py
+# 5. MCP — Cursor loads .cursor/mcp.json in this repo.
+# Do not run `uv run privacy-guard-mcp` in a normal terminal (stdio JSON-RPC).
+# Inspector (optional):
+uv run mcp dev src/privacy_guard_mcp/server.py
 ```
+
+Project MCP config is [`.cursor/mcp.json`](.cursor/mcp.json). Reload Cursor MCP servers after clone. The agent only calls the Completer for email, Slack DMs, @mentions, or messages that already contain Sensitive Spans. Channel chatter and "thanks" do not spend tokens.
 
 ### Why Featherless
 
@@ -144,8 +160,8 @@ so swapping providers later is a one-line change, not a rewrite.
 
 1. Message the agent on **Slack**: *"having trouble connecting to
    192.168.1.105 with key sk_live_abc123, can you help Rohan out?"*
-2. Terminal shows the **sanitized** text — the actual string sent to the
-   LLM — with placeholders in place of the real values.
+2. Terminal shows the **sanitized** text — the actual string sent to
+   Featherless — with placeholders in place of the real values.
 3. The reply comes back on Slack (or you message it on **Email** instead —
    same handler, same result) with the real values correctly restored.
 4. Open an MCP client, call `sanitize` directly on a new string, to show
@@ -172,4 +188,5 @@ so swapping providers later is a one-line change, not a rewrite.
 
 [caspian-sdk](https://github.com/TryCaspian/caspian-sdk) · Python ·
 [cryptography](https://cryptography.io/) (Fernet) · [spaCy](https://spacy.io/)
-· [MCP](https://modelcontextprotocol.io/)
+· [MCP](https://modelcontextprotocol.io/) ·
+[Featherless](https://featherless.ai)

@@ -78,13 +78,9 @@ class NerScanner:
 
     @classmethod
     def available(cls) -> bool:
-        try:
-            import spacy  # noqa: F401
+        import importlib.util
 
-            spacy.load("en_core_web_sm")
-        except (OSError, ImportError):
-            return False
-        return True
+        return importlib.util.find_spec("en_core_web_sm") is not None
 
     def _model(self):
         if self._nlp is None:
@@ -110,7 +106,9 @@ class NerScanner:
             value = ent.text.strip()
             if not value:
                 continue
-            spans.append(Span(start=ent.start_char, end=ent.end_char, value=value, category=category))
+            spans.append(
+                Span(start=ent.start_char, end=ent.end_char, value=value, category=category)
+            )
         return spans
 
 

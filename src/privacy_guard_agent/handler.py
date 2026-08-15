@@ -2,22 +2,35 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 from dotenv import load_dotenv
 
 from privacy_guard.guard import Guard
 from privacy_guard.types import MappingExpired
 from privacy_guard_agent.llm import Completer, FeatherlessCompleter
+from privacy_guard_agent.outbound import to_plain
+from privacy_guard_agent.triage import Decision, triage
+
+_ACK_REPLY = "You're welcome."
 
 
-def handle_message(message: object, guard: Guard, completer: Completer) -> None:
-    text = getattr(message, "text", None) or ""
-    if not text.strip():
-        reply = getattr(message, "reply", None)
-        if callable(reply):
-            reply("I didn't catch any text in that message.")
+def handle_message(
+    message: object,
+    guard: Guard,
+    completer: Completer,
+    etiquette: str = "",
+) -> None:
+    decision = triage(message)
+    print(f"[privacy-guard] triage={decision}", flush=True)
+
+    if decision is Decision.SKIP:
+        return
+    if decision is Decision.ACK:
+        _ack(message)
         return
 
+    text = getattr(message, "text", None) or ""
     typing = getattr(message, "typing", None)
     if callable(typing):
         typing()
@@ -25,7 +38,20 @@ def handle_message(message: object, guard: Guard, completer: Completer) -> None:
     result = guard.sanitize(text)
     print(f"[privacy-guard] sanitized -> {result.safe_text!r}", flush=True)
 
-    raw = completer.complete(result.safe_text)
+    channel = getattr(message, "channel", None)
+    try:
+        raw = completer.complete(result.safe_text, channel=channel, etiquette=etiquette)
+    except TypeError:
+        raw = completer.complete(result.safe_text)
+    except Exception as exc:
+        print(f"[privacy-guard] completer failed: {exc}", flush=True)
+        _reply(
+            message,
+            "I redacted that message, but the language model call failed. "
+            "Check FEATHERLESS_MODEL — Llama 3.x is gated on Featherless.",
+        )
+        return
+
     try:
         final = guard.restore(raw, result.mapping_id)
     except MappingExpired:
@@ -34,7 +60,18 @@ def handle_message(message: object, guard: Guard, completer: Completer) -> None:
             "Sorry — the redaction mapping expired. Please resend your message.",
         )
         return
-    _reply(message, final)
+    _reply(message, to_plain(final))
+
+
+def _ack(message: object) -> None:
+    react = getattr(message, "react", None)
+    if callable(react):
+        try:
+            react("thumbsup")
+            return
+        except Exception:
+            pass
+    _reply(message, _ACK_REPLY)
 
 
 def _reply(message: object, text: str) -> None:
@@ -45,7 +82,8 @@ def _reply(message: object, text: str) -> None:
 
 
 def main() -> None:
-    load_dotenv()
+    env_path = Path(__file__).resolve().parents[2] / ".env"
+    load_dotenv(env_path, override=True)
     from caspian_sdk import CommClient
 
     username = os.environ.get("CASPIAN_EMAIL_USERNAME", "privacy-guard")
@@ -64,14 +102,24 @@ def main() -> None:
 
     guard = Guard()
     completer = FeatherlessCompleter.from_env()
+    print(f"[privacy-guard] completer model -> {completer.model}", flush=True)
+
+    guides: dict[str, str] = {}
+    for name in ("slack", "email"):
+        try:
+            guides[name] = client.channel_guide(name)
+        except Exception as exc:
+            print(f"[privacy-guard] channel guide {name} unavailable: {exc}", flush=True)
+            guides[name] = ""
 
     @client.on_message
     def _on_message(message: object) -> None:
-        handle_message(message, guard, completer)
+        channel = (getattr(message, "channel", None) or "slack").lower()
+        handle_message(message, guard, completer, etiquette=guides.get(channel, ""))
 
     print("Listening on Slack + Email (Ctrl+C to stop).", flush=True)
     try:
-        client.listen()
+        client.listen(concurrency="debounce", debounce_ms=800)
     except KeyboardInterrupt:
         print("Stopped.", file=sys.stderr)
 

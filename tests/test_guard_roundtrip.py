@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import pytest
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from privacy_guard.guard import Guard
 from privacy_guard.types import MappingExpired

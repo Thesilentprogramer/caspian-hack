@@ -35,11 +35,15 @@ build-backend = "hatchling.build"
 pythonpath = ["src"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 markers = [
     "ner: tests that load spaCy en_core_web_sm",
     "live: tests that hit live Slack, Email, or Featherless",
 ]
 addopts = "-q"
+filterwarnings = [
+    "ignore:Field 'lifespan':UserWarning",
+]
 
 [tool.ruff]
 target-version = "py311"

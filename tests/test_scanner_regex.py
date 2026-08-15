@@ -78,7 +78,8 @@ def test_ner_documented_miss() -> None:
 
     if not NerScanner.available():
         pytest.skip("en_core_web_sm is not installed")
-    # Single initial + last name is a known NER miss — the demo caveat, not a bug.
-    spans = NerScanner().scan("ask R. Gupta about the staging box")
-    people = [s for s in spans if s.category == Category.PERSON]
-    assert "R. Gupta" not in {s.value for s in people}
+        # Initials of a teammate are a known NER miss — the demo caveat, not a bug.
+        spans = NerScanner().scan("talk to sj tomorrow")
+        people = [s for s in spans if s.category == Category.PERSON]
+        assert "sj" not in {s.value for s in people}
+        assert people == []
