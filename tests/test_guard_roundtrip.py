@@ -90,6 +90,26 @@ def test_ip_round_trip_property(ip: str) -> None:
     assert guard.restore(result.safe_text, result.mapping_id) == text
 
 
+def test_sanitize_reuses_live_mapping_id(guard: Guard) -> None:
+    first = guard.sanitize("host 10.0.0.1")
+    second = guard.sanitize("still 10.0.0.1 though", mapping_id=first.mapping_id)
+    assert second.mapping_id == first.mapping_id
+    assert "10.0.0.1" not in second.safe_text
+    assert guard.restore(second.safe_text, second.mapping_id) == "still 10.0.0.1 though"
+
+
+def test_sanitize_mints_new_mapping_when_id_expired() -> None:
+    clock = {"now": 0.0}
+    from privacy_guard._mapping import MappingStore
+
+    guard = Guard(store=MappingStore(ttl_seconds=5, clock=lambda: clock["now"]), use_ner=False)
+    first = guard.sanitize("ada@example.com")
+    clock["now"] = 10.0
+    second = guard.sanitize("ada@example.com", mapping_id=first.mapping_id)
+    assert second.mapping_id != first.mapping_id
+    assert guard.restore(second.safe_text, second.mapping_id) == "ada@example.com"
+
+
 def test_module_level_sanitize_restore_share_default_guard() -> None:
     from privacy_guard import restore, sanitize
 

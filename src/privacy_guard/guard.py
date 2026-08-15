@@ -30,8 +30,12 @@ class Guard:
             scanners.append(NerScanner())
         self._scanners = scanners
 
-    def sanitize(self, text: str) -> SanitizeResult:
-        mapping_id = self.store.create()
+    def sanitize(self, text: str, mapping_id: str | None = None) -> SanitizeResult:
+        if mapping_id and self.store.alive(mapping_id):
+            self.store.refresh(mapping_id)
+        else:
+            mapping_id = self.store.create()
+
         spans = scan_all(text, self._scanners)
         if not spans:
             return SanitizeResult(safe_text=text, mapping_id=mapping_id)

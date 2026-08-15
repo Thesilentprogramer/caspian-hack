@@ -4,6 +4,7 @@ import re
 from enum import StrEnum
 
 from privacy_guard._scanner import RegexScanner
+from privacy_guard_agent.threads import ThreadRoster
 
 _MENTION = re.compile(r"<@[^>]+>")
 _ACK = re.compile(
@@ -23,7 +24,7 @@ class Decision(StrEnum):
     COMPLETE = "complete"
 
 
-def triage(message: object) -> Decision:
+def triage(message: object, roster: ThreadRoster | None = None) -> Decision:
     text = (getattr(message, "text", None) or "").strip()
     if not text:
         return Decision.SKIP
@@ -32,15 +33,17 @@ def triage(message: object) -> Decision:
 
     channel = (getattr(message, "channel", None) or "").lower()
     chat_type = (getattr(message, "chat_type", None) or "").lower()
+    conversation_id = getattr(message, "conversation_id", None)
     has_spans = bool(_scanner.scan(text))
     mentioned = bool(_MENTION.search(text))
+    warm = bool(roster and roster.is_warm(conversation_id))
 
     if has_spans:
         return Decision.COMPLETE
     if channel in _DIRECTED_CHANNELS or chat_type == "dm":
         return Decision.ACK if _is_ack(text) else Decision.COMPLETE
     if chat_type in _GROUP_CHATS:
-        if mentioned:
+        if mentioned or warm:
             return Decision.ACK if _is_ack(text) else Decision.COMPLETE
         return Decision.SKIP
     # Email and other channels that do not report chat_type.

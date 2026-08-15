@@ -49,6 +49,17 @@ class MappingStore:
             for placeholder, blob in record.values.items()
         }
 
+    def alive(self, mapping_id: str) -> bool:
+        try:
+            self._live(mapping_id)
+        except MappingExpired:
+            return False
+        return True
+
+    def refresh(self, mapping_id: str) -> None:
+        record = self._live(mapping_id)
+        record.expires_at = self._clock() + self._ttl_seconds
+
     def drop(self, mapping_id: str) -> None:
         self._maps.pop(mapping_id, None)
 

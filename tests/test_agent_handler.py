@@ -16,6 +16,7 @@ class FakeMessage:
     text: str
     channel: str = "slack"
     chat_type: str | None = "dm"
+    conversation_id: str | None = None
     sender: dict | None = None
     replies: list[str] = field(default_factory=list)
     reactions: list[str] = field(default_factory=list)
@@ -78,8 +79,13 @@ def test_handler_fallback_on_expired_mapping() -> None:
 
     original_complete = completer.complete
 
-    def expire_then_complete(text: str, channel: str | None = None, etiquette: str = "") -> str:
-        out = original_complete(text, channel=channel, etiquette=etiquette)
+    def expire_then_complete(
+        text: str,
+        channel: str | None = None,
+        etiquette: str = "",
+        history: list | None = None,
+    ) -> str:
+        out = original_complete(text, channel=channel, etiquette=etiquette, history=history)
         for mid in list(guard.store._maps):
             guard.store.drop(mid)
         return out
@@ -165,7 +171,9 @@ def test_from_env_requires_key(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_handler_replies_when_completer_fails() -> None:
     class Boom:
-        def complete(self, text: str, channel: str | None = None, etiquette: str = "") -> str:
+        def complete(
+            self, text: str, channel: str | None = None, etiquette: str = "", history=None
+        ) -> str:
             raise RuntimeError("gated")
 
     message = FakeMessage("host 10.0.0.1")
@@ -177,7 +185,9 @@ def test_handler_replies_when_completer_fails() -> None:
 
 def test_handler_strips_markdown_asterisks() -> None:
     class MarkdownCompleter:
-        def complete(self, text: str, channel: str | None = None, etiquette: str = "") -> str:
+        def complete(
+            self, text: str, channel: str | None = None, etiquette: str = "", history=None
+        ) -> str:
             return "**Subject:** please whitelist " + text
 
     message = FakeMessage("host 10.0.0.1")
@@ -193,3 +203,64 @@ def test_to_plain_strips_markdown_keeps_placeholder() -> None:
     assert out == "Subject: whitelist [IP_ADDRESS_F5BA]\n• API Routing: fix it"
     assert "**" not in out
     assert "[IP_ADDRESS_F5BA]" in out
+
+
+def test_warm_thread_follow_up_without_mention() -> None:
+    from privacy_guard_agent.threads import ThreadRoster
+
+    clock = {"now": 0.0}
+    roster = ThreadRoster(ttl_seconds=30 * 60, clock=lambda: clock["now"])
+    guard = Guard(use_ner=False)
+    completer = FakeCompleter()
+    cid = "thread-1"
+
+    first = FakeMessage(
+        "<@U123> having trouble connecting to 192.168.1.105 with key sk_live_abc123",
+        chat_type="channel",
+        conversation_id=cid,
+    )
+    handle_message(first, guard, completer, roster=roster)
+    assert completer.seen
+    assert roster.is_warm(cid)
+
+    follow = FakeMessage("what IP was that", chat_type="channel", conversation_id=cid)
+    handle_message(follow, guard, completer, roster=roster)
+    assert len(completer.seen) == 2
+    assert completer.histories[1]
+    blob = str(completer.histories[1])
+    assert "[IP_ADDRESS_" in blob
+    assert "192.168.1.105" not in blob
+    assert "sk_live_abc123" not in blob
+
+
+def test_cold_thread_after_ttl_requires_mention() -> None:
+    from privacy_guard_agent.threads import ThreadRoster
+
+    clock = {"now": 0.0}
+    roster = ThreadRoster(ttl_seconds=30 * 60, clock=lambda: clock["now"])
+    guard = Guard(use_ner=False)
+    completer = FakeCompleter()
+    cid = "thread-ttl"
+
+    first = FakeMessage("<@U123> help with vpn", chat_type="channel", conversation_id=cid)
+    handle_message(first, guard, completer, roster=roster)
+    assert len(completer.seen) == 1
+
+    clock["now"] = 31 * 60
+    later = FakeMessage("still there?", chat_type="channel", conversation_id=cid)
+    handle_message(later, guard, completer, roster=roster)
+    assert len(completer.seen) == 1
+    assert later.replies == []
+
+
+def test_thanks_in_warm_thread_does_not_call_completer() -> None:
+    from privacy_guard_agent.threads import ThreadRoster
+
+    roster = ThreadRoster()
+    cid = "thread-thanks"
+    roster.touch(cid)
+    completer = FakeCompleter()
+    message = FakeMessage("thanks", chat_type="channel", conversation_id=cid)
+    handle_message(message, Guard(use_ner=False), completer, roster=roster)
+    assert completer.seen == []
+    assert message.reactions == ["thumbsup"]

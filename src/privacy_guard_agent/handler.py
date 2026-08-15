@@ -10,6 +10,7 @@ from privacy_guard.guard import Guard
 from privacy_guard.types import MappingExpired
 from privacy_guard_agent.llm import Completer, FeatherlessCompleter
 from privacy_guard_agent.outbound import to_plain
+from privacy_guard_agent.threads import ThreadRoster
 from privacy_guard_agent.triage import Decision, triage
 
 _ACK_REPLY = "You're welcome."
@@ -20,8 +21,9 @@ def handle_message(
     guard: Guard,
     completer: Completer,
     etiquette: str = "",
+    roster: ThreadRoster | None = None,
 ) -> None:
-    decision = triage(message)
+    decision = triage(message, roster=roster)
     print(f"[privacy-guard] triage={decision}", flush=True)
 
     if decision is Decision.SKIP:
@@ -31,16 +33,24 @@ def handle_message(
         return
 
     text = getattr(message, "text", None) or ""
+    conversation_id = getattr(message, "conversation_id", None)
     typing = getattr(message, "typing", None)
     if callable(typing):
         typing()
 
-    result = guard.sanitize(text)
+    prior = roster.history(conversation_id) if roster else []
+    mapping_id = roster.mapping_id(conversation_id) if roster else None
+    result = guard.sanitize(text, mapping_id=mapping_id)
     print(f"[privacy-guard] sanitized -> {result.safe_text!r}", flush=True)
 
     channel = getattr(message, "channel", None)
     try:
-        raw = completer.complete(result.safe_text, channel=channel, etiquette=etiquette)
+        raw = completer.complete(
+            result.safe_text,
+            channel=channel,
+            etiquette=etiquette,
+            history=prior,
+        )
     except TypeError:
         raw = completer.complete(result.safe_text)
     except Exception as exc:
@@ -61,6 +71,11 @@ def handle_message(
         )
         return
     _reply(message, to_plain(final))
+    if roster and conversation_id:
+        roster.append(conversation_id, "user", result.safe_text)
+        roster.append(conversation_id, "assistant", to_plain(raw))
+        roster.set_mapping_id(conversation_id, result.mapping_id)
+        roster.touch(conversation_id)
 
 
 def _ack(message: object) -> None:
@@ -102,6 +117,7 @@ def main() -> None:
 
     guard = Guard()
     completer = FeatherlessCompleter.from_env()
+    roster = ThreadRoster()
     print(f"[privacy-guard] completer model -> {completer.model}", flush=True)
 
     guides: dict[str, str] = {}
@@ -115,7 +131,13 @@ def main() -> None:
     @client.on_message
     def _on_message(message: object) -> None:
         channel = (getattr(message, "channel", None) or "slack").lower()
-        handle_message(message, guard, completer, etiquette=guides.get(channel, ""))
+        handle_message(
+            message,
+            guard,
+            completer,
+            etiquette=guides.get(channel, ""),
+            roster=roster,
+        )
 
     print("Listening on Slack + Email (Ctrl+C to stop).", flush=True)
     try:

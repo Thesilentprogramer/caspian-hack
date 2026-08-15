@@ -28,7 +28,13 @@ _EMAIL_ETIQUETTE = (
 
 
 class Completer(Protocol):
-    def complete(self, text: str, channel: str | None = None, etiquette: str = "") -> str: ...
+    def complete(
+        self,
+        text: str,
+        channel: str | None = None,
+        etiquette: str = "",
+        history: list[dict[str, str]] | None = None,
+    ) -> str: ...
 
 
 class FeatherlessCompleter:
@@ -52,7 +58,13 @@ class FeatherlessCompleter:
         base_url = os.environ.get("FEATHERLESS_BASE_URL", FEATHERLESS_BASE_URL)
         return cls(api_key=api_key, model=model, base_url=base_url)
 
-    def complete(self, text: str, channel: str | None = None, etiquette: str = "") -> str:
+    def complete(
+        self,
+        text: str,
+        channel: str | None = None,
+        etiquette: str = "",
+        history: list[dict[str, str]] | None = None,
+    ) -> str:
         system = SYSTEM_PROMPT
         if (channel or "").lower() == "email":
             system = f"{system} {_EMAIL_ETIQUETTE}"
@@ -60,12 +72,16 @@ class FeatherlessCompleter:
             system = f"{system} {_SLACK_ETIQUETTE}"
         if etiquette.strip():
             system = f"{system}\n\n{etiquette.strip()}"
+        messages: list[dict[str, str]] = [{"role": "system", "content": system}]
+        for turn in history or []:
+            role = turn.get("role") or "user"
+            if role not in {"user", "assistant"}:
+                role = "user"
+            messages.append({"role": role, "content": turn.get("content") or ""})
+        messages.append({"role": "user", "content": text})
         response = self._client.chat.completions.create(
             model=self.model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": text},
-            ],
+            messages=messages,
         )
         content = response.choices[0].message.content
         return content or ""
@@ -77,8 +93,16 @@ class FakeCompleter:
     def __init__(self) -> None:
         self.seen: list[str] = []
         self.channels: list[str | None] = []
+        self.histories: list[list[dict[str, str]]] = []
 
-    def complete(self, text: str, channel: str | None = None, etiquette: str = "") -> str:
+    def complete(
+        self,
+        text: str,
+        channel: str | None = None,
+        etiquette: str = "",
+        history: list[dict[str, str]] | None = None,
+    ) -> str:
         self.seen.append(text)
         self.channels.append(channel)
+        self.histories.append(list(history or []))
         return f"I can help with: {text}"
