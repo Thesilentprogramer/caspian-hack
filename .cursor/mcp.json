@@ -2,12 +2,7 @@
   "mcpServers": {
     "privacy-guard": {
       "command": "uv",
-      "args": [
-        "--directory",
-        "/Users/shubhamindulkar/caspian-hack",
-        "run",
-        "privacy-guard-mcp"
-      ]
+      "args": ["run", "privacy-guard-mcp"]
     }
   }
 }

@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy Guard — install and use</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!--
+  THESIS: The Completer never sees the secret — a product page that proves Sanitize on the sentence, then installs the local MCP. Refuses the SaaS-privacy card grid.
+  OWN-WORLD: Fluorescent hall + laptop. Apple materials: system type, #f5f5f7 paper, translucent nav, pill CTA. Brief-pinned over degraded seed 29b6508d.
+  STORY: A judge understands the mechanism, installs stdio MCP in Cursor, and knows Restore / Redaction Report exist.
+  FIRST VIEWPORT: Sticky nav. Display heading. Primary CTA Install the MCP. Synthetic sanitize demo under the fold of the hero, still in the first scroll.
+  FORM: Persuade · Apple layout (plan-pinned) · seed 29b6508d degraded, no challengers. FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+  -->
+  <header class="nav">
+    <a class="mark" href="#top">Privacy Guard</a>
+    <nav class="nav-links" aria-label="Page">
+      <a href="#install">Install</a>
+      <a href="#use">Use</a>
+      <a href="#limits">Limits</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <h1>The Completer never sees the secret.</h1>
+      <p class="lede">
+        Privacy Guard sits on the laptop between a Channel Message and the LLM.
+        Sanitize to Placeholders, reason, Restore before the reply goes back to
+        Slack, Email, or Telegram. The Mapping never leaves this machine.
+      </p>
+      <a class="cta" href="#install">Install the MCP</a>
+      <a class="cta ghost" href="#use">See the three tools</a>
+    </section>
+
+    <div class="demo" aria-label="Synthetic sanitize demonstration">
+      <p class="demo-label">Synthetic demonstration — not a live MCP call</p>
+      <p class="line" id="demo-line">
+        having trouble connecting to
+        <span class="swap">
+          <span class="secret">192.168.1.105</span>
+          <span class="ph">[IP_ADDRESS_0D5DBC27]</span>
+        </span>
+        with key
+        <span class="swap">
+          <span class="secret">sk_live_abc123</span>
+          <span class="ph">[API_KEY_CCF23B8D]</span>
+        </span>,
+        can you help Rohan out?
+      </p>
+      <div class="demo-actions">
+        <button class="cta" type="button" id="sanitize-btn" aria-pressed="false">Sanitize</button>
+        <span class="demo-label" id="demo-status">Channel Message as the Completer must not see it</span>
+      </div>
+    </div>
+
+    <section id="install">
+      <h2>Install on this laptop</h2>
+      <p>
+        Mapping is process-local. There is no public hosted MCP. Clone the repo,
+        sync the env, reload Cursor. Do not run <code>privacy-guard-mcp</code>
+        in a normal terminal — it speaks stdio JSON-RPC. Optional private HTTP
+        on loopback needs <code>MCP_AUTH_TOKEN</code> (not the Caspian key).
+      </p>
+      <ol class="steps">
+        <li>
+          <strong>Python env</strong>
+          <pre><code>uv sync --extra dev
+cp .env.example .env</code></pre>
+        </li>
+        <li>
+          <strong>Cursor MCP</strong>
+          This project already ships <code>.cursor/mcp.json</code>:
+          <pre><code>{
+  "mcpServers": {
+    "privacy-guard": {
+      "command": "uv",
+      "args": ["run", "privacy-guard-mcp"]
+    }
+  }
+}</code></pre>
+          Reload MCP servers. You should see <code>sanitize</code>,
+          <code>restore</code>, <code>redaction_report</code>,
+          <code>list_inbox</code>, <code>get_thread</code>, and
+          <code>brief_status</code>.
+        </li>
+        <li>
+          <strong>Claude Desktop (optional)</strong>
+          Point <code>uv</code> at your clone. Replace the directory with the
+          real path:
+          <pre><code>{
+  "mcpServers": {
+    "privacy-guard": {
+      "command": "uv",
+      "args": ["--directory", "/path/to/caspian-hack", "run", "privacy-guard-mcp"]
+    }
+  }
+}</code></pre>
+        </li>
+        <li>
+          <strong>Channel Adapter</strong>
+          <pre><code>uv run privacy-guard-agent</code></pre>
+          Slack + Email always. Telegram if <code>TELEGRAM_BOT_TOKEN</code> is set
+          (bot <code>@CaspianPrivacyGuardBot</code>). Live counts:
+          <a href="http://127.0.0.1:8787">http://127.0.0.1:8787</a> — never values.
+        </li>
+      </ol>
+    </section>
+
+    <section id="use">
+      <h2>Use the three tools</h2>
+      <p>
+        Before any model sees a Channel Message that may contain secrets:
+      </p>
+      <ol class="steps">
+        <li>
+          <strong>sanitize</strong>
+          Returns Safe Text and a Mapping Id. Work only on those.
+        </li>
+        <li>
+          <strong>redaction_report</strong>
+          Counts unique Placeholders per Category, e.g.
+          <code>{"IP_ADDRESS": 1, "API_KEY": 1}</code>. Never real values.
+        </li>
+        <li>
+          <strong>restore</strong>
+          Puts values back using the Mapping Id, right before the human sees the reply.
+        </li>
+        <li>
+          <strong>list_inbox / get_thread / brief_status</strong>
+          Pull Caspian conversations, Sanitize, return Safe Text plus a Mapping Id
+          and counts. The host model writes the briefing. No Completer inside the MCP.
+        </li>
+      </ol>
+      <pre><code>sanitize("having trouble connecting to 192.168.1.105 with key sk_live_abc123")
+→ safe_text with [IP_ADDRESS_…] [API_KEY_…]
+→ redaction_report(mapping_id)
+→ restore before the reply</code></pre>
+    </section>
+
+    <section id="limits">
+      <h2>Honest limits</h2>
+      <ul class="limits">
+        <li>Person and org names are best-effort NER. They will miss edge cases.</li>
+        <li>The Mapping is in-memory. Restart the process and it is gone.</li>
+        <li>Text only — no attachments, no OCR.</li>
+        <li>This is Fernet (AES-128-CBC + HMAC), not a zero-knowledge proof.</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer>
+    Privacy Guard · local Sanitize / Restore · Caspian Buildathon
+  </footer>
+
+  <script>
+    const line = document.getElementById("demo-line");
+    const btn = document.getElementById("sanitize-btn");
+    const status = document.getElementById("demo-status");
+    btn.addEventListener("click", () => {
+      const safe = line.classList.toggle("is-safe");
+      btn.setAttribute("aria-pressed", String(safe));
+      btn.textContent = safe ? "Show original" : "Sanitize";
+      status.textContent = safe
+        ? "Safe Text — what Featherless is allowed to see"
+        : "Channel Message as the Completer must not see it";
+    });
+  </script>
+</body>
+</html>

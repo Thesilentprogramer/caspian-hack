@@ -4,6 +4,7 @@ import re
 from enum import StrEnum
 
 from privacy_guard._scanner import RegexScanner
+from privacy_guard.types import Category, categories_from_env
 from privacy_guard_agent.threads import ThreadRoster
 
 _MENTION = re.compile(r"<@[^>]+>")
@@ -13,9 +14,7 @@ _ACK = re.compile(
 )
 _BOT_NAMES = {"privacy guard", "privacy-guard"}
 _GROUP_CHATS = {"channel", "group"}
-_DIRECTED_CHANNELS = {"email", "sms"}
-
-_scanner = RegexScanner()
+_DIRECTED_CHANNELS = {"email", "sms", "telegram"}
 
 
 class Decision(StrEnum):
@@ -24,7 +23,12 @@ class Decision(StrEnum):
     COMPLETE = "complete"
 
 
-def triage(message: object, roster: ThreadRoster | None = None) -> Decision:
+def triage(
+    message: object,
+    roster: ThreadRoster | None = None,
+    *,
+    categories: frozenset[Category] | None = None,
+) -> Decision:
     text = (getattr(message, "text", None) or "").strip()
     if not text:
         return Decision.SKIP
@@ -34,7 +38,8 @@ def triage(message: object, roster: ThreadRoster | None = None) -> Decision:
     channel = (getattr(message, "channel", None) or "").lower()
     chat_type = (getattr(message, "chat_type", None) or "").lower()
     conversation_id = getattr(message, "conversation_id", None)
-    has_spans = bool(_scanner.scan(text))
+    allowed = categories if categories is not None else categories_from_env()
+    has_spans = bool(RegexScanner(allowed=allowed).scan(text))
     mentioned = bool(_MENTION.search(text))
     warm = bool(roster and roster.is_warm(conversation_id))
 
@@ -46,7 +51,6 @@ def triage(message: object, roster: ThreadRoster | None = None) -> Decision:
         if mentioned or warm:
             return Decision.ACK if _is_ack(text) else Decision.COMPLETE
         return Decision.SKIP
-    # Email and other channels that do not report chat_type.
     return Decision.ACK if _is_ack(text) else Decision.COMPLETE
 
 

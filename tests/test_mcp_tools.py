@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from privacy_guard_mcp.server import mcp, restore, sanitize
+from privacy_guard_mcp.server import mcp, redaction_report, restore, sanitize
 
 
 @pytest.mark.asyncio
@@ -58,6 +58,21 @@ def test_tools_round_trip_direct() -> None:
     assert "ada@example.com" not in payload["safe_text"]
     out = restore(payload["safe_text"], payload["mapping_id"])
     assert out["restored_text"] == text
+
+
+def test_three_tools_registered() -> None:
+    names = {tool.name for tool in mcp._tool_manager.list_tools()}
+    assert names >= {
+        "sanitize",
+        "restore",
+        "redaction_report",
+        "list_inbox",
+        "get_thread",
+        "brief_status",
+    }
+    assert callable(sanitize)
+    assert callable(restore)
+    assert callable(redaction_report)
 
 
 def test_restore_expired_mapping_reports_error() -> None:

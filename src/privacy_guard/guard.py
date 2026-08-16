@@ -1,11 +1,26 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass, field
 
 from privacy_guard._mapping import MappingStore
-from privacy_guard._scanner import NerScanner, RegexScanner, scan_all
-from privacy_guard.types import Category, MappingExpired, SanitizeResult, Span
+from privacy_guard._scanner import (
+    NER_CATEGORIES,
+    REGEX_CATEGORIES,
+    NerScanner,
+    RegexScanner,
+    scan_all,
+)
+from privacy_guard.types import (
+    Category,
+    MappingExpired,
+    SanitizeResult,
+    Span,
+    categories_from_env,
+)
+
+_PLACEHOLDER_KEY = re.compile(r"^\[(.+)_[0-9A-Fa-f]+\]$")
 
 
 def _placeholder_for(category: Category, value: str) -> str:
@@ -15,19 +30,28 @@ def _placeholder_for(category: Category, value: str) -> str:
 
 @dataclass
 class Guard:
-    """Deep Privacy Guard module. Public interface: sanitize / restore."""
+    """Deep Privacy Guard module. Public interface: sanitize / restore / redaction_report."""
 
     store: MappingStore = field(default_factory=MappingStore)
     use_ner: bool | None = None
+    categories: frozenset[Category] | None = None
     _scanners: list[object] = field(init=False, repr=False)
+    _categories: frozenset[Category] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        scanners: list[object] = [RegexScanner()]
+        allowed = self.categories if self.categories is not None else categories_from_env()
+        self._categories = allowed
+        self.categories = allowed
+        scanners: list[object] = []
+        regex_allowed = allowed & REGEX_CATEGORIES
+        if regex_allowed:
+            scanners.append(RegexScanner(allowed=regex_allowed))
+        ner_allowed = allowed & NER_CATEGORIES
         ner = self.use_ner
         if ner is None:
-            ner = NerScanner.available()
-        if ner:
-            scanners.append(NerScanner())
+            ner = bool(ner_allowed) and NerScanner.available()
+        if ner and ner_allowed:
+            scanners.append(NerScanner(allowed=ner_allowed))
         self._scanners = scanners
 
     def sanitize(self, text: str, mapping_id: str | None = None) -> SanitizeResult:
@@ -36,7 +60,9 @@ class Guard:
         else:
             mapping_id = self.store.create()
 
-        spans = scan_all(text, self._scanners)
+        spans = [
+            span for span in scan_all(text, self._scanners) if span.category in self._categories
+        ]
         if not spans:
             return SanitizeResult(safe_text=text, mapping_id=mapping_id)
 
@@ -58,6 +84,18 @@ class Guard:
             restored = restored.replace(placeholder, plaintext)
         return restored
 
+    def redaction_report(self, mapping_id: str) -> dict[str, int]:
+        """Counts of unique Placeholders per Category. Never returns real values."""
+        values = self.store.get_all(mapping_id)
+        counts: dict[str, int] = {}
+        for placeholder in values:
+            match = _PLACEHOLDER_KEY.match(placeholder)
+            if match is None:
+                continue
+            category = match.group(1)
+            counts[category] = counts.get(category, 0) + 1
+        return counts
+
 
 _default: Guard | None = None
 
@@ -77,6 +115,10 @@ def restore(text: str, mapping_id: str) -> str:
     return get_guard().restore(text, mapping_id)
 
 
+def redaction_report(mapping_id: str) -> dict[str, int]:
+    return get_guard().redaction_report(mapping_id)
+
+
 def _replace_from_end(
     text: str,
     spans: list[Span],
@@ -93,4 +135,11 @@ def _replace_from_end(
     return "".join(pieces)
 
 
-__all__ = ["Guard", "MappingExpired", "sanitize", "restore", "get_guard"]
+__all__ = [
+    "Guard",
+    "MappingExpired",
+    "sanitize",
+    "restore",
+    "redaction_report",
+    "get_guard",
+]

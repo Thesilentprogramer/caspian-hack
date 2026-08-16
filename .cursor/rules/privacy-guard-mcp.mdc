@@ -1,0 +1,20 @@
+---
+description: Call Privacy Guard MCP sanitize / restore / redaction_report before any model sees secrets
+alwaysApply: true
+---
+
+# Privacy Guard MCP
+
+Before sending Channel Message text that may contain secrets to any model, call the `privacy-guard` MCP tools. Mapping values never leave this machine.
+
+1. `sanitize` first. Work only on `safe_text` plus `mapping_id`.
+2. `redaction_report(mapping_id)` when showing what was redacted — counts per Category, never real values.
+3. `restore` before returning real values to the user.
+4. Never log Mapping values, API keys, or `.env` secrets.
+
+```text
+sanitize("…192.168.1.105… sk_live_abc123…")
+→ safe_text with [IP_ADDRESS_…] [API_KEY_…]
+→ redaction_report → {"IP_ADDRESS": 1, "API_KEY": 1}
+→ restore before the human sees the reply
+```

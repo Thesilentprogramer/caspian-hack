@@ -3,13 +3,20 @@
 **A local redaction layer that lets an AI agent live in your real channels
 without leaking what's in them.**
 
-Built for the Caspian Buildathon — an agent that runs on **Slack + Email**
+Built for the Caspian Buildathon — an agent that runs on **Slack, Email, and Telegram**
 via [caspian-sdk](https://github.com/TryCaspian/caspian-sdk), wrapped with a
 privacy middleware that strips sensitive data out before it ever reaches an
 LLM, and puts it back before the reply goes out.
 
 Also ships as a standalone **MCP server**, so the same `sanitize` /
-`restore` tools work from any MCP-capable client, not just this agent.
+`restore` / `redaction_report` tools work from any MCP-capable client, not just this agent.
+Inbox tools (`list_inbox`, `get_thread`, `brief_status`) fetch Caspian conversations,
+Sanitize them, and return Safe Text only. Optional private HTTP: `privacy-guard-mcp --http`
+(requires `MCP_AUTH_TOKEN`; Mapping stays in that process).
+
+
+**Install and use:** open [`web/index.html`](web/index.html) (or GitHub Pages later).
+That page is the judge-facing install path. This README is the short clone checklist.
 
 ---
 
@@ -57,7 +64,7 @@ that term for this, and neither should you if you read this.
    back into the LLM's response, right before `message.reply()` sends it.
 
 ```
-Incoming (Slack / Email)
+Incoming (Slack / Email / Telegram)
        │
        ▼
 [Caspian on_message handler]
@@ -72,7 +79,7 @@ Incoming (Slack / Email)
   restore() ──► real values re-injected
        │
        ▼
-  message.reply()  →  back out on Slack / Email
+  message.reply()  →  back out on Slack / Email / Telegram
 ```
 
 The Completer is **not** streamed. Restore needs the full reply; streaming
@@ -111,8 +118,8 @@ caspian-hack/
 └── README.md
 ```
 
-Public interface of Privacy Guard is only `sanitize` / `restore`. The Caspian
-handler and the MCP server are adapters on that interface.
+Public interface of Privacy Guard is `sanitize` / `restore` / `redaction_report`.
+The Caspian handler and the MCP server are adapters on that interface.
 
 ---
 
@@ -131,20 +138,47 @@ curl -s -X POST https://api.trycaspianai.com/v1/projects/sandbox \
 # FEATHERLESS_API_KEY — from featherless.ai (hackathon inference partner)
 # FEATHERLESS_MODEL=Qwen/Qwen2.5-7B-Instruct   # Llama 3.x is HuggingFace-gated
 # After changing .env, restart the agent — it only reads the model at startup.
+# PRIVACY_GUARD_CATEGORIES=EMAIL,IP_ADDRESS,API_KEY,CREDIT_CARD,PHONE,PERSON,ORG
+#   Unset = all seven. Empty = redact nothing. Unknown names fail startup.
+# TELEGRAM_BOT_TOKEN=   # optional; from @BotFather. Slack/Email still boot without it.
+# PRIVACY_GUARD_DASHBOARD_PORT=8787  # localhost stats: http://127.0.0.1:8787
 
 # 3. Tests (no live channels, no spaCy model)
 uv run pytest -m "not live and not ner"
 
-# 4. Agent — Slack + Email, Featherless wrapped in the Guard
+# 4. Agent — Slack + Email (+ Telegram if TELEGRAM_BOT_TOKEN is set)
 uv run privacy-guard-agent
+# Dashboard: http://127.0.0.1:8787  (process-local counts, never real values)
 
-# 5. MCP — Cursor loads .cursor/mcp.json in this repo.
+# 5. MCP — Cursor loads .cursor/mcp.json (workspace-relative).
+# Reload MCP after clone. Tools: sanitize, restore, redaction_report,
+# list_inbox, get_thread, brief_status.
 # Do not run `uv run privacy-guard-mcp` in a normal terminal (stdio JSON-RPC).
+# Private HTTP (optional; Mapping stays in this process):
+# MCP_AUTH_TOKEN=... uv run privacy-guard-mcp --http --host 127.0.0.1 --port 8765
 # Inspector (optional):
 uv run mcp dev src/privacy_guard_mcp/server.py
+
+# Landing (install + use):
+open web/index.html
 ```
 
-Project MCP config is [`.cursor/mcp.json`](.cursor/mcp.json). Reload Cursor MCP servers after clone. The agent only calls the Completer for email, Slack DMs, @mentions, or messages that already contain Sensitive Spans. Channel chatter and "thanks" do not spend tokens.
+Project MCP config is [`.cursor/mcp.json`](.cursor/mcp.json). After clone, reload Cursor MCP servers.
+
+Claude Desktop (optional) — replace the directory with your clone:
+
+```json
+{
+  "mcpServers": {
+    "privacy-guard": {
+      "command": "uv",
+      "args": ["--directory", "/path/to/caspian-hack", "run", "privacy-guard-mcp"]
+    }
+  }
+}
+```
+
+The agent only calls the Completer for email, Slack DMs, @mentions, or messages that already contain Sensitive Spans. Channel chatter and "thanks" do not spend tokens.
 
 ### Why Featherless
 
@@ -164,9 +198,12 @@ so swapping providers later is a one-line change, not a rewrite.
    Featherless — with placeholders in place of the real values.
 3. The reply comes back on Slack (or you message it on **Email** instead —
    same handler, same result) with the real values correctly restored.
-4. Open an MCP client, call `sanitize` directly on a new string, to show
-   the tool works independent of the Caspian wiring — it's a real,
-   reusable MCP server, not glue code bolted to one handler.
+4. Open an MCP client, call `sanitize` then `redaction_report` on the Mapping Id
+   to show counts per Category (`{"IP_ADDRESS": 1, "API_KEY": 1}`) — never the
+   real values. Same handler on **Email** or **Telegram**.
+   `list_inbox` / `get_thread` / `brief_status` return sanitized Caspian history
+   (no Completer inside the MCP).
+5. Point at http://127.0.0.1:8787 — distinct values kept off Featherless.
 
 ---
 

@@ -8,12 +8,18 @@ from dotenv import load_dotenv
 
 from privacy_guard.guard import Guard
 from privacy_guard.types import MappingExpired
+from privacy_guard_agent.dashboard import DEFAULT_PORT, start_dashboard
 from privacy_guard_agent.llm import Completer, FeatherlessCompleter
 from privacy_guard_agent.outbound import to_plain
+from privacy_guard_agent.stats import Stats
 from privacy_guard_agent.threads import ThreadRoster
 from privacy_guard_agent.triage import Decision, triage
 
 _ACK_REPLY = "You're welcome."
+
+
+def telegram_token() -> str:
+    return os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 
 
 def handle_message(
@@ -22,13 +28,18 @@ def handle_message(
     completer: Completer,
     etiquette: str = "",
     roster: ThreadRoster | None = None,
+    stats: Stats | None = None,
 ) -> None:
-    decision = triage(message, roster=roster)
+    decision = triage(message, roster=roster, categories=guard.categories)
     print(f"[privacy-guard] triage={decision}", flush=True)
 
     if decision is Decision.SKIP:
+        if stats is not None:
+            stats.record_skip()
         return
     if decision is Decision.ACK:
+        if stats is not None:
+            stats.record_ack()
         _ack(message)
         return
 
@@ -42,6 +53,8 @@ def handle_message(
     mapping_id = roster.mapping_id(conversation_id) if roster else None
     result = guard.sanitize(text, mapping_id=mapping_id)
     print(f"[privacy-guard] sanitized -> {result.safe_text!r}", flush=True)
+    if stats is not None:
+        stats.record_complete(guard.redaction_report(result.mapping_id))
 
     channel = getattr(message, "channel", None)
     try:
@@ -115,13 +128,28 @@ def main() -> None:
     else:
         print(f"Slack connection: {slack!r}", flush=True)
 
+    channels = {"slack": True, "email": True, "telegram": False}
+    token = telegram_token()
+    if token:
+        client.connect_telegram(bot_token=token)
+        channels["telegram"] = True
+        print("Telegram connected", flush=True)
+    else:
+        print("Telegram skipped (no TELEGRAM_BOT_TOKEN)", flush=True)
+
     guard = Guard()
     completer = FeatherlessCompleter.from_env()
     roster = ThreadRoster()
+    stats = Stats()
+    stats.configure(model=completer.model, channels=channels)
     print(f"[privacy-guard] completer model -> {completer.model}", flush=True)
 
+    port = int(os.environ.get("PRIVACY_GUARD_DASHBOARD_PORT", str(DEFAULT_PORT)))
+    start_dashboard(stats, port=port)
+    print(f"Dashboard: http://127.0.0.1:{port}", flush=True)
+
     guides: dict[str, str] = {}
-    for name in ("slack", "email"):
+    for name in ("slack", "email", "telegram"):
         try:
             guides[name] = client.channel_guide(name)
         except Exception as exc:
@@ -137,9 +165,13 @@ def main() -> None:
             completer,
             etiquette=guides.get(channel, ""),
             roster=roster,
+            stats=stats,
         )
 
-    print("Listening on Slack + Email (Ctrl+C to stop).", flush=True)
+    listening = "Slack + Email"
+    if channels["telegram"]:
+        listening += " + Telegram"
+    print(f"Listening on {listening} (Ctrl+C to stop).", flush=True)
     try:
         client.listen(concurrency="debounce", debounce_ms=800)
     except KeyboardInterrupt:

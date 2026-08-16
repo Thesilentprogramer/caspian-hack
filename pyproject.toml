@@ -45,6 +45,9 @@ filterwarnings = [
     "ignore:Field 'lifespan':UserWarning",
 ]
 
+[tool.hatch.build.targets.wheel.force-include]
+"src/privacy_guard_agent/dashboard.html" = "privacy_guard_agent/dashboard.html"
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100

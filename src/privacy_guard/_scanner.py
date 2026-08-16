@@ -6,6 +6,17 @@ from dataclasses import dataclass
 
 from privacy_guard.types import CATEGORY_PRIORITY, Category, Span
 
+REGEX_CATEGORIES = frozenset(
+    {
+        Category.EMAIL,
+        Category.IP_ADDRESS,
+        Category.CREDIT_CARD,
+        Category.API_KEY,
+        Category.PHONE,
+    }
+)
+NER_CATEGORIES = frozenset({Category.PERSON, Category.ORG})
+
 _EMAIL = re.compile(
     r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b",
 )
@@ -60,13 +71,21 @@ def resolve_overlaps(spans: Sequence[Span]) -> list[Span]:
 
 
 class RegexScanner:
+    def __init__(self, allowed: frozenset[Category] | None = None) -> None:
+        self._allowed = REGEX_CATEGORIES if allowed is None else (allowed & REGEX_CATEGORIES)
+
     def scan(self, text: str) -> list[Span]:
         found: list[Span] = []
-        found.extend(_spans(text, _EMAIL, Category.EMAIL))
-        found.extend(_spans(text, _IPV4, Category.IP_ADDRESS))
-        found.extend(_spans(text, _API_KEY, Category.API_KEY))
-        found.extend(_card_spans(text))
-        found.extend(_spans(text, _PHONE, Category.PHONE))
+        if Category.EMAIL in self._allowed:
+            found.extend(_spans(text, _EMAIL, Category.EMAIL))
+        if Category.IP_ADDRESS in self._allowed:
+            found.extend(_spans(text, _IPV4, Category.IP_ADDRESS))
+        if Category.API_KEY in self._allowed:
+            found.extend(_spans(text, _API_KEY, Category.API_KEY))
+        if Category.CREDIT_CARD in self._allowed:
+            found.extend(_card_spans(text))
+        if Category.PHONE in self._allowed:
+            found.extend(_spans(text, _PHONE, Category.PHONE))
         return found
 
 
@@ -74,6 +93,7 @@ class RegexScanner:
 class NerScanner:
     """Best-effort Person/Org names. Missing model → empty scan, never a crash."""
 
+    allowed: frozenset[Category] | None = None
     _nlp: object | None = None
 
     @classmethod
@@ -105,6 +125,9 @@ class NerScanner:
                 continue
             value = ent.text.strip()
             if not value:
+                continue
+            allowed = NER_CATEGORIES if self.allowed is None else self.allowed
+            if category not in allowed:
                 continue
             spans.append(
                 Span(start=ent.start_char, end=ent.end_char, value=value, category=category)

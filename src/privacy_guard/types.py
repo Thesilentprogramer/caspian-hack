@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from enum import StrEnum
+
+ENV_CATEGORIES = "PRIVACY_GUARD_CATEGORIES"
+_UNSET = object()
 
 
 class Category(StrEnum):
@@ -49,3 +53,33 @@ class MappingExpired(LookupError):
 
 class MappingError(Exception):
     """The Mapping store refused an operation."""
+
+
+def categories_from_env(raw: str | None | object = _UNSET) -> frozenset[Category]:
+    """Allowlist of Categories. Unset → all seven. Empty → none. Unknown names fail."""
+    if raw is _UNSET:
+        if ENV_CATEGORIES not in os.environ:
+            return frozenset(Category)
+        raw = os.environ[ENV_CATEGORIES]
+    if raw is None:
+        return frozenset(Category)
+    text = str(raw).strip()
+    if not text:
+        return frozenset()
+    found: list[Category] = []
+    unknown: list[str] = []
+    for part in text.split(","):
+        name = part.strip().upper()
+        if not name:
+            continue
+        try:
+            found.append(Category(name))
+        except ValueError:
+            unknown.append(name)
+    if unknown:
+        raise ValueError(
+            f"unknown {ENV_CATEGORIES} value(s): {', '.join(unknown)}. "
+            f"Allowed: {', '.join(c.value for c in Category)}"
+        )
+    return frozenset(found)
+

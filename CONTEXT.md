@@ -9,7 +9,7 @@ The local redaction module that sits between a Channel Message and an LLM.
 _Avoid_: privacy middleware, PII service, tokenizer, zero-knowledge layer
 
 **Channel Message**:
-Inbound text from a real communication channel (Slack or Email in this product).
+Inbound text from a real communication channel (Slack, Email, or Telegram in this product).
 _Avoid_: request, prompt, payload
 
 **Sensitive Span**:
@@ -44,6 +44,14 @@ _Avoid_: redact, mask, scrub, tokenize
 The operation that substitutes real values back into text that still contains Placeholders, using a Mapping Id.
 _Avoid_: decrypt, detokenize, unmask
 
+**Redaction Report**:
+Counts of unique Placeholders per Category for one Mapping Id. Never includes real values.
+_Avoid_: stats dump, PII report, audit log
+
+**Category Allowlist**:
+The set of Categories Privacy Guard will Sanitize, from `PRIVACY_GUARD_CATEGORIES`. Unset means all seven; empty means none.
+_Avoid_: policy engine, filter list, PII config
+
 **Scanner**:
 The finder of Sensitive Spans: a Regex Scanner (deterministic) and an optional NER Scanner (best-effort names).
 _Avoid_: detector, extractor, recognizer
@@ -53,9 +61,9 @@ The LLM call that receives only Safe Text and returns a reply that may still con
 _Avoid_: model, inference provider (when you mean the seam)
 
 **Channel Adapter**:
-The Caspian `on_message` handler that Sanitizes, calls the Completer, Restores, then replies on Slack and Email.
+The Caspian `on_message` handler that Sanitizes, calls the Completer, Restores, then replies on Slack, Email, and optionally Telegram.
 _Avoid_: agent handler, bot, service
 
 **Tool Adapter**:
-The MCP server that exposes Sanitize and Restore as two tools.
+The MCP server that exposes Sanitize, Restore, and Redaction Report as tools.
 _Avoid_: MCP service, API

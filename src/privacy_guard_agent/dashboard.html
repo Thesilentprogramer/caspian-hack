@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy Guard — kept off Featherless</title>
+  <style>
+    :root {
+      --ink: #f3eadc;
+      --muted: #d2c4b0;
+      --rule: #3d342c;
+      --oxide: #e07048;
+      --paper: #14110e;
+      --live: #d7c39a;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      font-size: 16px;
+      line-height: 1.45;
+    }
+    body {
+      padding: 2.5rem 8vw 3rem;
+      max-width: 52rem;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 1.5rem;
+      padding-bottom: 0.85rem;
+      border-bottom: 1px solid var(--rule);
+      margin-bottom: 2.25rem;
+    }
+    .mark {
+      font-size: 0.95rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .slug {
+      font-size: 0.8rem;
+      color: var(--muted);
+      text-align: right;
+    }
+    .slug span[data-on="true"] { color: var(--live); }
+    .slug span[data-on="false"] { color: var(--rule); }
+    h1 {
+      margin: 0 0 0.35rem;
+      font-size: 6rem;
+      font-weight: 600;
+      line-height: 0.9;
+      letter-spacing: -0.04em;
+      font-variant-numeric: tabular-nums lining-nums;
+      color: var(--oxide);
+    }
+    .lede {
+      margin: 0 0 2.5rem;
+      max-width: 22ch;
+      font-size: 1.25rem;
+      font-weight: 500;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+    }
+    .wait {
+      margin: -1.5rem 0 2.25rem;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+    .wait[hidden] { display: none; }
+    dl {
+      margin: 0;
+      padding-top: 1.25rem;
+      border-top: 1px solid var(--rule);
+    }
+    .row {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: baseline;
+      gap: 0.65rem;
+      padding: 0.45rem 0;
+      font-variant-numeric: tabular-nums;
+    }
+    .row dt {
+      margin: 0;
+      font-size: 0.82rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .dots {
+      border-bottom: 1px dotted var(--rule);
+      height: 0.7em;
+    }
+    .row dd {
+      margin: 0;
+      font-size: 1.05rem;
+      font-weight: 600;
+      min-width: 2ch;
+      text-align: right;
+    }
+    footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-top: 2.75rem;
+      padding-top: 0.85rem;
+      border-top: 1px solid var(--rule);
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+    @media (max-width: 640px) {
+      body { padding: 1.5rem 1.25rem 2rem; }
+      h1 { font-size: 4.25rem; }
+      header, footer { flex-direction: column; align-items: flex-start; }
+      .slug { text-align: left; }
+    }
+  </style>
+</head>
+<body>
+  <!--
+  THESIS: A live tally of distinct values kept off Featherless — a compositor's job ticket, not a metric-card dashboard.
+  OWN-WORLD: Warm night-ink on charcoal, hairline rules, dotted leaders, tabular count as the heading. No cards, no neon, no eyebrow.
+  STORY: A judge glances over and sees how many secrets never reached the LLM, which Categories fired, and which channels are live.
+  FIRST VIEWPORT: Flush-left job ticket. Product name and channel slugline on a top rule. The count is the heading. Category leaders underneath. Status strip on the footer rule.
+  FORM: Operate ledger / press check. FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+  -->
+  <header>
+    <div class="mark">Privacy Guard</div>
+    <div class="slug" id="slug">slack · email · telegram</div>
+  </header>
+  <h1 id="kept">0</h1>
+  <p class="lede">distinct values kept off Featherless</p>
+  <p class="wait" id="wait">Waiting for a Channel Message on Slack, Email, or Telegram.</p>
+  <dl id="categories"></dl>
+  <footer>
+    <div id="model"></div>
+    <div id="uptime"></div>
+  </footer>
+  <script>
+    const labels = ["EMAIL","IP_ADDRESS","CREDIT_CARD","API_KEY","PHONE","PERSON","ORG"];
+    const cats = document.getElementById("categories");
+    labels.forEach((name) => {
+      const row = document.createElement("div");
+      row.className = "row";
+      row.innerHTML = `<dt>${name.replaceAll("_", " ")}</dt><div class="dots"></div><dd data-cat="${name}">0</dd>`;
+      cats.appendChild(row);
+    });
+    function fmtUptime(seconds) {
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = seconds % 60;
+      if (h) return `${h}h ${m}m`;
+      if (m) return `${m}m ${s}s`;
+      return `${s}s up`;
+    }
+    async function tick() {
+      const res = await fetch("/stats.json", { cache: "no-store" });
+      const data = await res.json();
+      document.getElementById("kept").textContent = String(data.kept_off_featherless ?? 0);
+      document.getElementById("wait").hidden = !data.waiting;
+      const channels = data.channels || {};
+      document.getElementById("slug").innerHTML = ["slack","email","telegram"]
+        .map((name) => `<span data-on="${Boolean(channels[name])}">${name}</span>`)
+        .join(" · ");
+      labels.forEach((name) => {
+        const cell = document.querySelector(`[data-cat="${name}"]`);
+        if (cell) cell.textContent = String((data.by_category || {})[name] || 0);
+      });
+      document.getElementById("model").textContent = data.model || "";
+      document.getElementById("uptime").textContent = fmtUptime(data.uptime_seconds || 0);
+    }
+    tick();
+    setInterval(tick, 2000);
+  </script>
+</body>
+</html>
